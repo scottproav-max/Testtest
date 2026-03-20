@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Lava Lamp</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    width: 100%; height: 100%;
+    overflow: hidden;
+    background: #1a1a2e;
+    touch-action: none;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+  }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+
+function resize() {
+  canvas.width = window.innerWidth * devicePixelRatio;
+  canvas.height = window.innerHeight * devicePixelRatio;
+  ctx.scale(devicePixelRatio, devicePixelRatio);
+}
+resize();
+window.addEventListener('resize', resize);
+
+const W = () => window.innerWidth;
+const H = () => window.innerHeight;
+
+const COLORS = [
+  [255, 23, 68],
+  [255, 145, 0],
+  [255, 234, 0],
+  [255, 64, 129],
+  [224, 64, 251],
+  [255, 110, 64],
+  [255, 171, 64],
+  [255, 82, 82],
+];
+
+class Blob {
+  constructor(x, y, radius, vy, color) {
+    this.x = x;
+    this.y = y;
+    this.radius = radius;
+    this.vx = 0;
+    this.vy = vy;
+    this.color = color;
+    this.wobblePhase = Math.random() * Math.PI * 2;
+    this.wobbleSpeed = 0.5 + Math.random() * 1.5;
+  }
+
+  update(dt, lamp) {
+    this.wobblePhase += this.wobbleSpeed * dt;
+    this.vx += Math.sin(this.wobblePhase) * 30 * dt;
+    this.vx *= 0.95;
+
+    this.x += this.vx * dt;
+    this.y += this.vy * dt;
+
+    const m = this.radius * 0.5;
+    if (this.x < lamp.left + m) { this.x = lamp.left + m; this.vx = Math.abs(this.vx); }
+    if (this.x > lamp.right - m) { this.x = lamp.right - m; this.vx = -Math.abs(this.vx); }
+    if (this.y < lamp.top + m) { this.y = lamp.top + m; this.vy = Math.abs(this.vy) * (0.8 + Math.random() * 0.4); }
+    if (this.y > lamp.bottom - m) { this.y = lamp.bottom - m; this.vy = -Math.abs(this.vy) * (0.8 + Math.random() * 0.4); }
+  }
+}
+
+const lamp = { left: 0, right: 0, top: 0, bottom: 0 };
+function updateLamp() {
+  const w = W(), h = H();
+  const bodyW = w * 0.65;
+  lamp.left = (w - bodyW) / 2;
+  lamp.right = lamp.left + bodyW;
+  lamp.top = h * 0.08;
+  lamp.bottom = h * 0.88;
+}
+updateLamp();
+window.addEventListener('resize', updateLamp);
+
+const blobs = [];
+for (let i = 0; i < 8; i++) {
+  updateLamp();
+  const x = lamp.left + Math.random() * (lamp.right - lamp.left);
+  const y = lamp.top + Math.random() * (lamp.bottom - lamp.top);
+  const r = 40 + Math.random() * 50;
+  const vy = (Math.random() < 0.5 ? -1 : 1) * (25 + Math.random() * 40);
+  blobs.push(new Blob(x, y, r, vy, COLORS[i % COLORS.length]));
+}
+
+// Touch / mouse interaction
+function handleInteraction(px, py) {
+  if (px >= lamp.left && px <= lamp.right && py >= lamp.top && py <= lamp.bottom) {
+    for (const b of blobs) {
+      const dx = b.x - px, dy = b.y - py;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist < 150 && dist > 1) {
+        const force = (150 - dist) / 150 * 80;
+        b.vx += (dx / dist) * force;
+        b.vy += (dy / dist) * force;
+      }
+    }
+  }
+}
+
+function spawnBlob(px, py) {
+  if (px >= lamp.left && px <= lamp.right && py >= lamp.top && py <= lamp.bottom && blobs.length < 20) {
+    const r = 35 + Math.random() * 45;
+    const vy = (Math.random() < 0.5 ? -1 : 1) * (25 + Math.random() * 40);
+    blobs.push(new Blob(px, py, r, vy, COLORS[Math.floor(Math.random() * COLORS.length)]));
+  }
+}
+
+canvas.addEventListener('touchstart', e => { e.preventDefault(); const t = e.touches[0]; spawnBlob(t.clientX, t.clientY); });
+canvas.addEventListener('touchmove', e => { e.preventDefault(); const t = e.touches[0]; handleInteraction(t.clientX, t.clientY); });
+canvas.addEventListener('mousedown', e => { spawnBlob(e.clientX, e.clientY); });
+canvas.addEventListener('mousemove', e => { if (e.buttons) handleInteraction(e.clientX, e.clientY); });
+
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+}
+
+let lastTime = performance.now();
+
+function draw(now) {
+  const dt = Math.min((now - lastTime) / 1000, 0.05);
+  lastTime = now;
+
+  const w = W(), h = H();
+  ctx.clearRect(0, 0, w, h);
+
+  // Background
+  ctx.fillStyle = '#1a1a2e';
+  ctx.fillRect(0, 0, w, h);
+
+  updateLamp();
+  const bodyW = lamp.right - lamp.left;
+  const rx = bodyW * 0.12;
+
+  // Lamp body background
+  ctx.save();
+  roundRect(ctx, lamp.left, lamp.top, bodyW, lamp.bottom - lamp.top, rx);
+  ctx.fillStyle = '#0d0d1a';
+  ctx.fill();
+
+  // Clip blobs to lamp body
+  ctx.save();
+  roundRect(ctx, lamp.left, lamp.top, bodyW, lamp.bottom - lamp.top, rx);
+  ctx.clip();
+
+  // Update and draw blobs
+  ctx.globalCompositeOperation = 'lighter';
+  for (const b of blobs) {
+    b.update(dt, lamp);
+    const grad = ctx.createRadialGradient(b.x, b.y, 0, b.x, b.y, b.radius * 2);
+    const [r, g, bl] = b.color;
+    grad.addColorStop(0, `rgba(${r},${g},${bl},0.9)`);
+    grad.addColorStop(0.4, `rgba(${r},${g},${bl},0.6)`);
+    grad.addColorStop(1, `rgba(${r},${g},${bl},0)`);
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(b.x, b.y, b.radius * 2, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.restore();
+
+  // Lamp glass outline
+  roundRect(ctx, lamp.left, lamp.top, bodyW, lamp.bottom - lamp.top, rx);
+  ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  // Glass reflection
+  ctx.save();
+  roundRect(ctx, lamp.left, lamp.top, bodyW, lamp.bottom - lamp.top, rx);
+  ctx.clip();
+  const reflGrad = ctx.createLinearGradient(lamp.left, 0, lamp.left + bodyW * 0.3, 0);
+  reflGrad.addColorStop(0, 'rgba(255,255,255,0.06)');
+  reflGrad.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = reflGrad;
+  ctx.fillRect(lamp.left, lamp.top, bodyW * 0.3, lamp.bottom - lamp.top);
+  ctx.restore();
+
+  // Top cap
+  const cx = w / 2;
+  const capW = bodyW * 0.45, capH = h * 0.05;
+  roundRect(ctx, cx - capW / 2, lamp.top - capH + 8, capW, capH, 14);
+  ctx.fillStyle = '#2a2a3e';
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,0.12)';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+
+  // Bottom base
+  const baseW = bodyW * 0.65, baseH = h * 0.06;
+  roundRect(ctx, cx - baseW / 2, lamp.bottom - 6, baseW, baseH, 18);
+  ctx.fillStyle = '#2a2a3e';
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,0.12)';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+
+  // Hint text
+  ctx.fillStyle = 'rgba(255,255,255,0.25)';
+  ctx.font = `${Math.max(11, w * 0.03)}px -apple-system, sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.fillText('tap to add blobs \u2022 drag to push', cx, lamp.bottom + baseH + 20);
+
+  ctx.restore();
+  requestAnimationFrame(draw);
+}
+
+requestAnimationFrame(draw);
+</script>
+</body>
+</html>
